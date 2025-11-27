@@ -37,21 +37,3 @@ void TaskGain::run() {
         sleep_ms(1);
     }
 }
-
-void Task3::callback(int msg) {
-    *p_in = msg;
-}
-
-void Task3::run() {
-    while (!finish) {
-        int val = p_in->exchange(0);
-        if(val != 0) {
-            *p_out = val;
-            printf("write 3-%d: %d\n\n", key, val);
-            sleep_ms(1);
-            *p_out = val + 1;
-            printf("write 3-%d: %d\n\n", key, val + 1);
-        }
-        sleep_ms(1);
-    }
-}
