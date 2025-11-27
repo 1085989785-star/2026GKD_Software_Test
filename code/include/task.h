@@ -2,23 +2,39 @@
 #include <atomic>
 #include <vector>
 #include <thread>
+using namespace std;
 
-class TaskBase {
+void sleep_ms(int val);
+
+class SensorTaskBase
+{
 public:
-    TaskBase(int key, std::atomic<int> *p1, std::atomic<int> *p2) : key(key), p1(p1), p2(p2) {}
+    SensorTaskBase(int key, atomic<int> *p_in, atomic<int> *p_out) : key(key), p_in(p_in), p_out(p_out) {}
     virtual void callback(int msg) = 0;
-    virtual void run() = 0;
-    virtual ~TaskBase() = default;
-    void start();
-    void stop();
+    virtual void run() = 0; // 不同task的任务
+    void stop() = 0;
+    virtual ~SensorTaskBase() = default;
     int key;
+
+protected:
+    atomic<int> *p_in = nullptr, *p_out = nullptr;
+    atomic<bool> finish{false};
+
+private:
+    thread handler;
+};
+calc class TaskFilter : public SensorTaskBase
+{
+public:
+    TaskFliter(int key, atomic<int> *p_in, atomic<int> *p_out) : SensorTaskBase(key, p_in, p_out) {}
+    void run() override;
+    void callback(int msg) override;
 };
 
-class Task1 : public TaskBase {
+class TaskGain : public SensorTaskBase
+{
 };
 
-class Task2 : public TaskBase {
-};
-
-class Task3 : public TaskBase {
+class TaskDelayBuffer : public SensorTaskBase
+{
 };
