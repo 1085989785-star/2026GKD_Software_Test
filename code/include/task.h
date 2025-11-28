@@ -23,7 +23,8 @@ protected:
 private:
     thread handler;
 };
-calc class TaskFilter : public SensorTaskBase
+
+class TaskFilter : public SensorTaskBase
 {
 public:
     TaskFliter(int key, atomic<int> *p_in, atomic<int> *p_out) : SensorTaskBase(key, p_in, p_out) {}
@@ -33,8 +34,15 @@ public:
 
 class TaskGain : public SensorTaskBase
 {
+    TaskGain(int key, atomic<int> *p_in, atomic<int> *p_out) : TaskBase(key, p_in, p_out) {}
+    void callback(int msg) override;
+    void run() override;
+    int k = 1;
 };
 
 class TaskDelayBuffer : public SensorTaskBase
 {
+    TaskDelayBuffer(int key, atomic<int> *p_in, atomic<int> *p_out) : TaskBase(key, p_in, p_out) {}
+    void callback(int msg) override;
+    void run() override;
 };

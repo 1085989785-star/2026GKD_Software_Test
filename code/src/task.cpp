@@ -16,24 +16,59 @@ void TaskFilter::run()
 {
     while (!finish)
     {
-        int val = (*p_in) + 1;
-        printf("write Filter-{%d}:{%d}\n", key, val);
+        *p_out = (*p_in) + 1;
+        cout << "write Fliter-{" << key << "}: " << *p_out << endl;
         *p_in = 0;
         sleep_ms(1);
     }
 }
-void TaskGain::callback(int msg) {
+void TaskGain::callback(int msg)
+{
     k = msg;
     *p_in = 1;
 }
 
-void TaskGain::run() {
-    while (!finish) {
-        int val = p_in->exchange(0);
-        if(val != 0) {
-            *p_out = val * k;
-            printf("write 2-%d: %d\n\n", key, val * k);
+void TaskGain::run()
+{
+    while (!finish)
+    {
+        if (*p_in != 0)
+        {
+            *p_out = *p_in * k;
+            cout << "write Gain-{" << key << "}: " << *p_out << endl;
+            *p_in = 0;
         }
         sleep_ms(1);
     }
+}
+
+void TaskDelayBuffer::callback(int msg)
+{
+    *p_in = msg;
+}
+
+void TaskDelayBuffer::run()
+{
+    while (!finish)
+    {
+        int t = p_in->exchange(0);
+        if (t != 0)
+        {
+            *p_out = t;
+            cout << "write Delay-{" << key << "}: " << *p_out << endl;
+            sleep_ms(1);
+            *p_out = t + 1;
+            cout << "write Delay-{" << key << "}: " << *p_out << endl;
+        }
+        sleep_ms(1);
+    }
+}
+
+void TaskBase::start() {
+    handler = thread(&TaskBase::run, this);
+}
+
+void TaskBase::stop() {
+    finish = true;
+    handler.join();
 }

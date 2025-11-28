@@ -1,7 +1,9 @@
 #include "task.h"
 #include "task_manager.h"
 
-int main() {
+int main()
+{
     TaskManager taskManager;
     taskManager.run();
+    return 0;
 }
