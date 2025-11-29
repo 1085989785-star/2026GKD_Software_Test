@@ -3,59 +3,64 @@
 using namespace std;
 void TaskManager::run()
 {
-    out_thread = thread(&TaskManager::out_check, this);
     while (true)
     {
-        string cmd;
-        cin >> cmd;
-        if (cmd == "add")
+        out_thread = thread(&TaskManager::out_check, this);
+        while (running)
         {
-            int key;
-            string kind;
-            cout << "key" << endl;
-            cin >> key;
-            for (const auto &task : task_list)
+            string cmd;
+            cin >> cmd;
+            if (cmd == "add")
             {
-                if (task.key == key)
+                lock_guard<mutex> lock(task_mutex);
+                int key;
+                string kind;
+                cout << "key" << endl;
+                cin >> key;
+                for (const auto &task : task_list)
                 {
-                    cout << "Key: " << task.key << "重复" << endl;
+                    if (task.key == key)
+                    {
+                        cout << "Key: " << task.key << "重复" << endl;
+                    }
+                    else
+                    {
+                        cout << "kind" << endl;
+                        cin >> kind;
+                        add_task(key, kind);
+                        cout << "add finish" << endl;
+                    }
                 }
-                else
-                {
-                    cout << "kind" << endl;
-                    cin >> kind;
-                    add_task(key, kind);
-                    cout << "add finish" << endl;
-                }
+                task_thread = thread(&TaskManager::process, this);
             }
-        }
-        else if (cmd == "callback")
-        {
-            int key, msg;
-            cin >> key;
-            cin >> msg;
-            if (task_map.count(key))
+            else if (cmd == "callback")
             {
+                lock_guard<mutex> lock(task_mutex);
+                int key, msg;
+                cin >> key;
+                cin >> msg;
                 if (task_map.count(key))
                 {
                     task_map[key]->callback(msg);
+                    cout << "callback" << endl;
+                }
+                else
+                {
+                    cerr << "Invalid key: " << key << endl;
                 }
             }
-            else
+            else if (cmd == "pop")
             {
-                cerr << "Invalid key: " << key << endl;
-            }
-        }
-        else if (cmd == "pop")
-        {
-            if (!task_list.empty())
-            {
-                pop_task();
-                printf("pop finish\n\n");
-            }
-            else
-            {
-                printf("task list is empty!\n");
+                lock_guard<mutex> lock(task_mutex);
+                if (!task_list.empty())
+                {
+                    pop_task();
+                    printf("pop finish\n\n");
+                }
+                else
+                {
+                    printf("task list is empty!\n");
+                }
             }
         }
     }
@@ -63,33 +68,28 @@ void TaskManager::run()
 
 void TaskManager::add_task(key, kind)
 {
-    TaskBase *task_pointer = nullptr;
     lock_guard<mutex> lock(task_mutex);
     auto p_out = link.empty() ? &out : link.back();
     link.push_back(new atomic<int>(0));
     auto p_in = link.back();
+    unique_ptr<SensorTaskBase> task;
+
     if (kind == "filter")
     {
-        task_pointer = new TaskFliter(key, p_in, p_out);
+        task = new TaskFliter(key, p_in, p_out);
     }
     else if (kind == "gain")
     {
-        task_pointer = new TaskGain(key, p_in, p_out);
+        task = new TaskGain(key, p_in, p_out);
     }
     else if (kind == "delay")
     {
-        task_pointer = new TaskDelayBuffer(key, p_in, p_out);
+        task = new TaskDelayBuffer(key, p_in, p_out);
     }
-    else
-    {
-        cerr << "kind error " << endl;
-        delete link.back(); 
-        link.pop_back();
-        return;
-    }
-    task_map[key] = task_pointer;
-    task_list.push_back(task_pointer);
-    task_pointer->start();
+    task_list.push_back(move(task));
+    task_map[key] = task_list.back().get();
+    task_list.back()->start();
+    cout << "add" << endl;
 }
 
 void TaskManager::out_check()
@@ -101,18 +101,54 @@ void TaskManager::out_check()
         {
             printf("out: %d\n\n", val);
         }
-        this_thread::sleep_ms(1);
-        ;
+        sleep_ms(1);
     }
 }
 
 void TaskManager::pop_task()
 {
-    auto task_pointer = task_list.back();
+    lock_guard<mutex> lock(mtx);
+    if (tasks.empty())
+    {
+        cout << "No task to pop" << endl;
+        return;
+    }
+    auto task = task_list.back();
     task_list.pop_back();
-    task_map.erase(task_pointer->key);
-    task_pointer->stop();
-    delete task_pointer;
+    task_map.erase(task->key);
+    delete task;
     delete link.back();
     link.pop_back();
+    cout << "pop" << endl;
+}
+
+void start()
+{
+    running = true;
+    monitor_thread = thread(&SensorPipeline::monitor, this);
+    cout << "start" << endl;
+}
+
+void stop()
+{
+    running = false;
+    lock_guard<mutex> lock(task_mutex);
+    tasks.clear();
+    if (monitor_thread.joinable())
+        monitor_thread.join();
+    cout << "stop" << endl;
+}
+
+void monitor()
+{
+    while (running)
+    {
+        lock_guard<mutex> lock(mtx);
+        if (out != 0)
+        {
+            cout << "Output: " << out << endl;
+            out = 0; // 读取后清零
+        }
+        sleep_ms(int val)(1);
+    }
 }

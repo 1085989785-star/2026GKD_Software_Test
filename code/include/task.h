@@ -13,6 +13,7 @@ public:
     virtual void callback(int msg) = 0;
     virtual void run() = 0; // 不同task的任务
     void stop() = 0;
+    void start() = 0;
     virtual ~SensorTaskBase() = default;
     int key;
 
@@ -34,7 +35,7 @@ public:
 
 class TaskGain : public SensorTaskBase
 {
-    TaskGain(int key, atomic<int> *p_in, atomic<int> *p_out) : TaskBase(key, p_in, p_out) {}
+    TaskGain(int key, atomic<int> *p_in, atomic<int> *p_out) : SensorTaskBase(key, p_in, p_out) {}
     void callback(int msg) override;
     void run() override;
     int k = 1;
@@ -42,7 +43,7 @@ class TaskGain : public SensorTaskBase
 
 class TaskDelayBuffer : public SensorTaskBase
 {
-    TaskDelayBuffer(int key, atomic<int> *p_in, atomic<int> *p_out) : TaskBase(key, p_in, p_out) {}
+    TaskDelayBuffer(int key, atomic<int> *p_in, atomic<int> *p_out) : SensorTaskBase(key, p_in, p_out) {}
     void callback(int msg) override;
     void run() override;
 };
