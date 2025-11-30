@@ -1,10 +1,14 @@
 #include "task.h"
 #include <iostream>
-using namespace std;
+#include <chrono>
+#include <thread>
+#include <mutex>
+
+static std::mutex io_mutex;
 
 void sleep_ms(int val)
 {
-    this_thread::sleep_for(chrono::milliseconds(val));
+    std::this_thread::sleep_for(std::chrono::milliseconds(val));
 }
 
 void TaskFilter::callback(int msg)
@@ -14,11 +18,22 @@ void TaskFilter::callback(int msg)
 
 void TaskFilter::run()
 {
-    *p_out = (*p_in) + 1;
-    cout << "write Fliter-{" << key << "}: " << *p_out << endl;
-    *p_in = 0;
-    sleep_ms(1);
+    while (!finish)
+    {
+        if (*p_in != 0)
+        {
+
+            *p_out = (*p_in) + 1;
+            {
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "write Filter-{" << key << "}: " << *p_out << std::endl;
+            }
+            *p_in = 0;
+        }
+        sleep_ms(1);
+    }
 }
+
 void TaskGain::callback(int msg)
 {
     k = msg;
@@ -27,13 +42,19 @@ void TaskGain::callback(int msg)
 
 void TaskGain::run()
 {
-    if (*p_in != 0)
+    while (!finish)
     {
-        *p_out = *p_in * k;
-        cout << "write Gain-{" << key << "}: " << *p_out << endl;
-        *p_in = 0;
+        if (*p_in != 0)
+        {
+            *p_out = *p_in * k;
+            {
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "write Gain-{" << key << "}: " << *p_out << std::endl;
+            }
+            *p_in = 0;
+        }
+        sleep_ms(1);
     }
-    sleep_ms(1);
 }
 
 void TaskDelayBuffer::callback(int msg)
@@ -43,26 +64,38 @@ void TaskDelayBuffer::callback(int msg)
 
 void TaskDelayBuffer::run()
 {
-    int t = p_in->exchange(0);
-    if (t != 0)
+    while (!finish)
     {
-        *p_out = t;
-        cout << "write Delay-{" << key << "}: " << *p_out << endl;
-        sleep_ms(1);
-        *p_out = t + 1;
-        cout << "write Delay-{" << key << "}: " << *p_out << endl;
+        int t = p_in->exchange(0);
+        if (t != 0)
+        {
+            *p_out = t;
+            {
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "write Delay-{" << key << "}: " << *p_out << std::endl;
+            }
+            sleep_ms(1);
+            *p_out = t + 1;
+            {
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "write Delay-{" << key << "}: " << *p_out << std::endl;
+            }
+            sleep_ms(1);
+        }
     }
-    sleep_ms(1);
 }
 
-void TaskBase::stop()
+void SensorTaskBase::stop()
 {
     finish = true;
-    handler.join();
+    if (handler.joinable())
+    {
+        handler.join();
+    }
 }
 
-void TaskBase::start()
+void SensorTaskBase::start()
 {
     finish = false;
-    handler = thread(&SensorTaskBase::run, this);
+    handler = std::thread(&SensorTaskBase::run, this);
 }

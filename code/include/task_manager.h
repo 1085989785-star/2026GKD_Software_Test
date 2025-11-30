@@ -2,29 +2,34 @@
 #include "task.h"
 #include <string>
 #include <memory>
-using namespace std;
+#include <map>
+#include <mutex>
+#include <atomic>
+#include <vector>
+#include <thread>
 
 class TaskManager
 {
 private:
-    mutex task_mutex;
-
-    atomic<int> out;
-    atomic<bool> running;
-    thread monitor_thread;
-    vector<unique_ptr<SensorTaskBase>> tasks_list;
-    vector<atomic<int> link>;
-    map<int, TaskBase *> task_map;
+    std::mutex task_mutex;
+    std::atomic<int> out;
+    std::atomic<bool> running{false};
+    std::thread monitor_thread;
+    std::vector<std::unique_ptr<SensorTaskBase>> task_list;
+    std::vector<std::unique_ptr<std::atomic<int>>> link;
+    std::map<int, SensorTaskBase *> task_map;
 
 public:
-    SensorTaskBase(atomic<bool> running, atomic<int> out) : running(false), out(0) {}
-    void add_task(int key, string kind);
-    void pop_task();
-    void out_check();
-    void run();
-    void monitor()
+    TaskManager() : out(0), running(false) {} //
     ~TaskManager()
     {
         stop();
     }
+    void add_task(int key, std::string kind);
+    void pop_task();
+    void out_check();
+    void run();
+    void monitor();
+    void start();
+    void stop();
 };

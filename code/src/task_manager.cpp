@@ -1,105 +1,120 @@
 #include "task_manager.h"
 #include <iostream>
-using namespace std;
+#include <mutex>
+#include <atomic>
+#include <memory>
+#include <utility>
+
 void TaskManager::run()
 {
     while (true)
     {
-        out_thread = thread(&TaskManager::out_check, this);
-        while (running)
+        std::string cmd;
         {
-            string cmd;
-            cin >> cmd;
-            if (cmd == "add")
+            std::lock_guard<std::mutex> lock(task_mutex);
+            std::cout << "cmd (add/callback/pop): ";
+        }
+        std::cin >> cmd;
+        if (cmd == "add")
+        {
+            std::lock_guard<std::mutex> lock(task_mutex);
+            int key;
+            std::string kind;
+            std::cout << "key: ";
+            std::cin >> key;
+            std::cout << "kind (filter/gain/delay): ";
+            std::cin >> kind;
+            add_task(key, kind);
             {
-                lock_guard<mutex> lock(task_mutex);
-                int key;
-                string kind;
-                cout << "key" << endl;
-                cin >> key;
-                for (const auto &task : task_list)
-                {
-                    if (task.key == key)
-                    {
-                        cout << "Key: " << task.key << "重复" << endl;
-                    }
-                    else
-                    {
-                        cout << "kind" << endl;
-                        cin >> kind;
-                        add_task(key, kind);
-                        cout << "add finish" << endl;
-                    }
-                }
-                task_thread = thread(&TaskManager::process, this);
-            }
-            else if (cmd == "callback")
-            {
-                lock_guard<mutex> lock(task_mutex);
-                int key, msg;
-                cin >> key;
-                cin >> msg;
-                if (task_map.count(key))
-                {
-                    task_map[key]->callback(msg);
-                    cout << "callback" << endl;
-                }
-                else
-                {
-                    cerr << "Invalid key: " << key << endl;
-                }
-            }
-            else if (cmd == "pop")
-            {
-                lock_guard<mutex> lock(task_mutex);
-                if (!task_list.empty())
-                {
-                    pop_task();
-                    printf("pop finish\n\n");
-                }
-                else
-                {
-                    printf("task list is empty!\n");
-                }
+                std::lock_guard<std::mutex> lock(task_mutex);
+                std::cout << "add finish" << std::endl;
             }
         }
+        else if (cmd == "callback")
+        {
+            std::lock_guard<std::mutex> lock(task_mutex);
+            int key, msg;
+            std::cout << "key:";
+            std::cin >> key;
+            std::cout << "msg:";
+            std::cin >> msg;
+            if (task_map.count(key))
+            {
+                task_map[key]->callback(msg);
+                {
+                    std::lock_guard<std::mutex> lock(task_mutex);
+                    std::cout << "callback" << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Invalid key: " << key << std::endl;
+            }
+            sleep_ms(1);
+        }
+        else if (cmd == "pop")
+        {
+            pop_task();
+        }
+        // start();
+        sleep_ms(1);
     }
 }
 
-void TaskManager::add_task(key, kind)
+void TaskManager::add_task(int key, std::string kind)
 {
-    lock_guard<mutex> lock(task_mutex);
-    auto p_out = link.empty() ? &out : link.back();
-    link.push_back(new atomic<int>(0));
-    auto p_in = link.back();
-    unique_ptr<SensorTaskBase> task;
-
+    std::lock_guard<std::mutex> lock(task_mutex);
+    if (task_map.find(key) != task_map.end())
+    {
+        std::cout << "Key: " << key << "重复" << std::endl;
+        return;
+    }
+    auto p_out = link.empty() ? &out : link.back().get();
+    link.push_back(std::make_unique<std::atomic<int>>(0));
+    auto p_in = link.back().get();
+    std::unique_ptr<SensorTaskBase> task;
     if (kind == "filter")
     {
-        task = new TaskFliter(key, p_in, p_out);
+        task = std::make_unique<TaskFilter>(key, p_in, p_out);
     }
     else if (kind == "gain")
     {
-        task = new TaskGain(key, p_in, p_out);
+        task = std::make_unique<TaskGain>(key, p_in, p_out);
     }
     else if (kind == "delay")
     {
-        task = new TaskDelayBuffer(key, p_in, p_out);
+        task = std::make_unique<TaskDelayBuffer>(key, p_in, p_out);
     }
-    task_list.push_back(move(task));
+    task_list.push_back(std::move(task));
     task_map[key] = task_list.back().get();
     task_list.back()->start();
-    cout << "add" << endl;
+    sleep_ms(1);
 }
 
 void TaskManager::out_check()
 {
-    while (true)
+    while (running)
     {
         int val = out.exchange(0);
         if (val != 0)
         {
-            printf("out: %d\n\n", val);
+            std::cout << "out: " << val << "\n\n"
+                      << std::endl;
+        }
+        sleep_ms(1);
+    }
+}
+
+void TaskManager::monitor()
+{
+    while (running)
+    {
+        std::lock_guard<std::mutex> lock(task_mutex);
+        int val = out.exchange(0);
+        if (val != 0)
+        {
+            std::cout << "Output: " << out << std::endl;
+            out = 0;
         }
         sleep_ms(1);
     }
@@ -107,48 +122,37 @@ void TaskManager::out_check()
 
 void TaskManager::pop_task()
 {
-    lock_guard<mutex> lock(mtx);
-    if (tasks.empty())
+    std::lock_guard<std::mutex> lock(task_mutex);
+    if (task_list.empty())
     {
-        cout << "No task to pop" << endl;
+        std::cout << "No task to pop" << std::endl;
         return;
     }
-    auto task = task_list.back();
+    auto &task = task_list.back();
+    int key_to_remove = task->key;
+    task->stop();
     task_list.pop_back();
-    task_map.erase(task->key);
-    delete task;
-    delete link.back();
     link.pop_back();
-    cout << "pop" << endl;
+    task_map.erase(key_to_remove); 
+    std::cout << "pop" << std::endl;
 }
 
-void start()
+void TaskManager::start()
 {
     running = true;
-    monitor_thread = thread(&SensorPipeline::monitor, this);
-    cout << "start" << endl;
+    monitor_thread = std::thread(&TaskManager::monitor, this);
+    std::cout << "start" << std::endl;
 }
 
-void stop()
+void TaskManager::stop()
 {
     running = false;
-    lock_guard<mutex> lock(task_mutex);
-    tasks.clear();
+    std::lock_guard<std::mutex> lock(task_mutex);
+    for (auto &task : task_list)
+    {
+        task->stop();
+    }
     if (monitor_thread.joinable())
         monitor_thread.join();
-    cout << "stop" << endl;
-}
-
-void monitor()
-{
-    while (running)
-    {
-        lock_guard<mutex> lock(mtx);
-        if (out != 0)
-        {
-            cout << "Output: " << out << endl;
-            out = 0; // 读取后清零
-        }
-        sleep_ms(int val)(1);
-    }
+    std::cout << "stop" << std::endl;
 }
